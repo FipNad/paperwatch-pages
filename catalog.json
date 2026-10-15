@@ -1,0 +1,468 @@
+[
+  {
+    "id": "arxiv-crypto",
+    "name": "arXiv · Cryptography & Security",
+    "kind": "Repository",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://arxiv.org/list/cs.CR/recent",
+    "adapter": "arxiv",
+    "config": "cat:cs.CR",
+    "note": "Category feed through the arXiv API; includes preprints, not just journal papers.",
+    "reference": "https://info.arxiv.org/help/api/user-manual.html"
+  },
+  {
+    "id": "arxiv-quantum",
+    "name": "arXiv · Quantum Physics",
+    "kind": "Repository",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://arxiv.org/list/quant-ph/recent",
+    "adapter": "arxiv",
+    "config": "cat:quant-ph",
+    "note": "Broad quantum preprint stream; use interest topics to narrow it.",
+    "reference": "https://info.arxiv.org/help/api/user-manual.html"
+  },
+  {
+    "id": "arxiv-information",
+    "name": "arXiv · Information Theory",
+    "kind": "Repository",
+    "areas": [
+      "Quantum information",
+      "Cryptography"
+    ],
+    "url": "https://arxiv.org/list/cs.IT/recent",
+    "adapter": "arxiv",
+    "config": "cat:cs.IT",
+    "note": "Information theory category; quantum relevance varies by paper.",
+    "reference": "https://info.arxiv.org/help/api/user-manual.html"
+  },
+  {
+    "id": "iacr-eprint",
+    "name": "IACR Cryptology ePrint Archive",
+    "kind": "Repository",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://eprint.iacr.org/",
+    "adapter": "feed",
+    "config": "https://eprint.iacr.org/rss/atom.xml?order=recent",
+    "interval_hours": 24,
+    "note": "Official Atom feed. IACR asks clients to refresh no more than daily.",
+    "reference": "https://eprint.iacr.org/rss/"
+  },
+  {
+    "id": "hal",
+    "name": "HAL open archive",
+    "kind": "Repository",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing",
+      "Quantum information"
+    ],
+    "url": "https://hal.science/",
+    "adapter": "",
+    "note": "Public search and OAI APIs exist; a site adapter is still needed for scheduled monitoring.",
+    "reference": "https://api.hal.science/docs/search"
+  },
+  {
+    "id": "zenodo",
+    "name": "Zenodo",
+    "kind": "Repository",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://zenodo.org/",
+    "adapter": "",
+    "note": "Cross-discipline repository with a records API; a tailored adapter is needed.",
+    "reference": "https://developers.zenodo.org/"
+  },
+  {
+    "id": "openalex",
+    "name": "OpenAlex",
+    "kind": "Index",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://openalex.org/",
+    "adapter": "",
+    "sourceable": false,
+    "note": "Broad research index already used by Discover mode; metadata and abstracts vary by work.",
+    "reference": "https://help.openalex.org/api/"
+  },
+  {
+    "id": "crossref",
+    "name": "Crossref",
+    "kind": "Index",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://search.crossref.org/",
+    "adapter": "",
+    "sourceable": false,
+    "note": "DOI metadata and journal work lists via public REST API; abstract coverage varies.",
+    "reference": "https://www.crossref.org/documentation/retrieve-metadata/rest-api/"
+  },
+  {
+    "id": "semantic-scholar",
+    "name": "Semantic Scholar Academic Graph",
+    "kind": "Index",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://www.semanticscholar.org/",
+    "adapter": "",
+    "sourceable": false,
+    "note": "Public paper search API; useful as another discovery backend.",
+    "reference": "https://api.semanticscholar.org/api-docs/"
+  },
+  {
+    "id": "openaire",
+    "name": "OpenAIRE Graph",
+    "kind": "Index",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://explore.openaire.eu/",
+    "adapter": "",
+    "sourceable": false,
+    "note": "Research product graph with a documented API.",
+    "reference": "https://graph.openaire.eu/docs/apis/graph-api-v4/research-products/examples/"
+  },
+  {
+    "id": "dblp",
+    "name": "dblp computer science bibliography",
+    "kind": "Index",
+    "areas": [
+      "Cryptography",
+      "Security",
+      "Quantum computing"
+    ],
+    "url": "https://dblp.org/",
+    "adapter": "",
+    "sourceable": false,
+    "note": "Computer science publication bibliography; strongest for proceedings and citation metadata.",
+    "reference": "https://dblp.org/faq/How%2Bto%2Buse%2Bthe%2Bdblp%2Bsearch%2BAPI.html"
+  },
+  {
+    "id": "quantum-journal",
+    "name": "Quantum",
+    "kind": "Journal",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://quantum-journal.org/",
+    "adapter": "feed",
+    "config": "https://quantum-journal.org/feed/",
+    "note": "Open journal; live RSS check returned titles and abstracts.",
+    "reference": "https://quantum-journal.org/about/"
+  },
+  {
+    "id": "npjqi",
+    "name": "npj Quantum Information",
+    "kind": "Journal",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://www.nature.com/npjqi/",
+    "adapter": "feed",
+    "config": "https://www.nature.com/npjqi.rss",
+    "note": "Official RSS 1.0 feed; items currently contain titles, dates and DOIs, but no abstracts.",
+    "reference": "https://www.nature.com/npjqi/for-authors-and-referees/about/journal-information"
+  },
+  {
+    "id": "prx-quantum",
+    "name": "PRX Quantum",
+    "kind": "Journal",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "Quantum information"
+    ],
+    "url": "https://journals.aps.org/prxquantum",
+    "adapter": "",
+    "note": "Open access APS journal; add a verified feed or scraper before monitoring.",
+    "reference": "https://journals.aps.org/prxquantum"
+  },
+  {
+    "id": "qst",
+    "name": "Quantum Science and Technology",
+    "kind": "Journal",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://iopscience.iop.org/journal/2058-9565",
+    "adapter": "",
+    "note": "IOP journal across quantum technologies; needs a verified feed or scraper.",
+    "reference": "https://publishingsupport.iopscience.iop.org/journals/quantum-science-technology/"
+  },
+  {
+    "id": "optica-quantum",
+    "name": "Optica Quantum",
+    "kind": "Journal",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "QRNG",
+      "Quantum information"
+    ],
+    "url": "https://opg.optica.org/opticaq/home.cfm",
+    "adapter": "",
+    "note": "Optics and quantum technology journal, including quantum communication and random number generation.",
+    "reference": "https://opg.optica.org/opticaq/home.cfm"
+  },
+  {
+    "id": "journal-cryptology",
+    "name": "Journal of Cryptology",
+    "kind": "Journal",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://www.iacr.org/jofc/jofc.html",
+    "adapter": "",
+    "note": "IACR journal; needs a verified feed or site adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "tosc",
+    "name": "IACR Transactions on Symmetric Cryptology",
+    "kind": "Journal",
+    "areas": [
+      "Cryptography"
+    ],
+    "url": "https://tosc.iacr.org/",
+    "adapter": "",
+    "note": "Symmetric cryptography journal and FSE publication channel; needs an adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "tches",
+    "name": "IACR Transactions on Cryptographic Hardware and Embedded Systems",
+    "kind": "Journal",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://tches.iacr.org/",
+    "adapter": "",
+    "note": "Cryptographic hardware and embedded systems; needs an adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "cic",
+    "name": "IACR Communications in Cryptology",
+    "kind": "Journal",
+    "areas": [
+      "Cryptography"
+    ],
+    "url": "https://cic.iacr.org/",
+    "adapter": "",
+    "note": "IACR cryptology journal; needs an adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "popets",
+    "name": "Proceedings on Privacy Enhancing Technologies",
+    "kind": "Journal",
+    "areas": [
+      "Security",
+      "Cryptography"
+    ],
+    "url": "https://petsymposium.org/popets/",
+    "adapter": "",
+    "note": "Open access journal associated with PETS; needs a feed or scraper.",
+    "reference": "https://petsymposium.org/popets/"
+  },
+  {
+    "id": "iacr-crypto",
+    "name": "CRYPTO",
+    "kind": "Proceedings",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://www.iacr.org/meetings/crypto/",
+    "adapter": "",
+    "note": "IACR flagship conference; use year-specific program or proceedings adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "iacr-eurocrypt",
+    "name": "EUROCRYPT",
+    "kind": "Proceedings",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://www.iacr.org/meetings/eurocrypt/",
+    "adapter": "",
+    "note": "IACR flagship conference; use year-specific program or proceedings adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "iacr-asiacrypt",
+    "name": "ASIACRYPT",
+    "kind": "Proceedings",
+    "areas": [
+      "Cryptography",
+      "Security"
+    ],
+    "url": "https://www.iacr.org/meetings/asiacrypt/",
+    "adapter": "",
+    "note": "IACR flagship conference; use year-specific program or proceedings adapter.",
+    "reference": "https://www.iacr.org/"
+  },
+  {
+    "id": "usenix-security",
+    "name": "USENIX Security Symposium",
+    "kind": "Proceedings",
+    "areas": [
+      "Security",
+      "Cryptography"
+    ],
+    "url": "https://www.usenix.org/conferences/byname/108",
+    "adapter": "",
+    "note": "Annual security proceedings; yearly pages need a dedicated adapter.",
+    "reference": "https://www.usenix.org/"
+  },
+  {
+    "id": "ndss",
+    "name": "NDSS Symposium",
+    "kind": "Proceedings",
+    "areas": [
+      "Security",
+      "Cryptography"
+    ],
+    "url": "https://www.ndss-symposium.org/previous-ndss-symposia/",
+    "adapter": "",
+    "note": "Network and distributed systems security proceedings; yearly pages need an adapter.",
+    "reference": "https://www.ndss-symposium.org/"
+  },
+  {
+    "id": "ieee-sp",
+    "name": "IEEE Symposium on Security and Privacy",
+    "kind": "Proceedings",
+    "areas": [
+      "Security",
+      "Cryptography"
+    ],
+    "url": "https://www.ieee-security.org/TC/SP-Index.html",
+    "adapter": "",
+    "note": "Security and privacy conference series; yearly paper listings need an adapter.",
+    "reference": "https://www.ieee-security.org/TC/SP-Index.html"
+  },
+  {
+    "id": "acm-ccs",
+    "name": "ACM Conference on Computer and Communications Security",
+    "kind": "Proceedings",
+    "areas": [
+      "Security",
+      "Cryptography"
+    ],
+    "url": "https://sigsac.org/ccs.html",
+    "adapter": "",
+    "note": "ACM CCS conference series; yearly program pages need an adapter.",
+    "reference": "https://sigsac.org/ccs.html"
+  },
+  {
+    "id": "qcrypt",
+    "name": "QCrypt",
+    "kind": "Conference program",
+    "areas": [
+      "Quantum communication",
+      "Cryptography",
+      "Security",
+      "QRNG"
+    ],
+    "url": "https://qcrypt.net/",
+    "adapter": "",
+    "note": "Quantum cryptography conference program with accepted papers; it is not a single standing proceedings feed.",
+    "reference": "https://qcrypt.net/"
+  },
+  {
+    "id": "qip",
+    "name": "Quantum Information Processing (QIP)",
+    "kind": "Conference program",
+    "areas": [
+      "Quantum computing",
+      "Quantum information",
+      "Quantum communication"
+    ],
+    "url": "https://qipconference.org/",
+    "adapter": "",
+    "note": "Conference accepted-paper lists and abstracts; it is not a single standing proceedings feed.",
+    "reference": "https://qipconference.org/"
+  },
+  {
+    "id": "tqc",
+    "name": "Theory of Quantum Computation, Communication and Cryptography",
+    "kind": "Proceedings",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "Quantum information",
+      "Cryptography"
+    ],
+    "url": "https://drops.dagstuhl.de/entities/conference/TQC",
+    "adapter": "",
+    "note": "Open access LIPIcs proceedings on DROPS; volume-specific harvesting needs an adapter.",
+    "reference": "https://drops.dagstuhl.de/entities/conference/TQC"
+  },
+  {
+    "id": "ieee-qce",
+    "name": "IEEE International Conference on Quantum Computing and Engineering",
+    "kind": "Proceedings",
+    "areas": [
+      "Quantum computing",
+      "Quantum communication",
+      "Quantum information"
+    ],
+    "url": "https://qce.quantum.ieee.org/",
+    "adapter": "",
+    "note": "IEEE Quantum Week technical papers; yearly proceedings need an adapter.",
+    "reference": "https://qce.quantum.ieee.org/"
+  }
+]

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102b37">
+  <title>Paperwatch · Research discovery</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">P<span>·</span></div><div><strong>Paperwatch</strong><small>Research discovery desk</small></div></div>
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav aria-label="Main navigation">
+        <button class="nav-item active" data-page="overview"><span>◫</span> Overview</button>
+        <button class="nav-item" data-page="sources"><span>◎</span> Monitored sources</button>
+        <button class="nav-item" data-page="topics"><span>✳</span> Interest topics</button>
+        <button class="nav-item" data-page="discover"><span>⌕</span> Discover papers</button>
+        <button class="nav-item" data-page="library"><span>▤</span> Paper library</button>
+      </nav>
+      <div class="sidebar-label sidebar-label-bottom">SYSTEM</div>
+      <nav><button class="nav-item admin-only" data-page="users" hidden><span>♙</span> Users</button><button class="nav-item admin-only" data-page="settings" hidden><span>⚙</span> Model settings</button></nav>
+      <div class="sidebar-foot"><span class="live-dot"></span> <span id="workspace-label">Profile</span> <small id="workspace-detail">Open an invite to begin</small></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar"><div class="crumb">PAPERWATCH <span>/</span> <span id="crumb-page">OVERVIEW</span></div><div class="top-actions"><button id="connection-switch" class="button tertiary small" type="button" hidden>Change backend</button><span id="job-status">All caught up</span><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>
+      <main id="main" aria-live="polite"></main>
+    </div>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="./runtime-config.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>
