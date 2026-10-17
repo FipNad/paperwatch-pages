@@ -44,6 +44,92 @@
     "reference": "https://info.arxiv.org/help/api/user-manual.html"
   },
   {
+    "id": "arxiv-math",
+    "name": "arXiv · Mathematics",
+    "kind": "Repository",
+    "areas": [
+      "Mathematics",
+      "Statistics"
+    ],
+    "url": "https://arxiv.org/list/math/recent",
+    "adapter": "arxiv",
+    "config": "cat:math",
+    "note": "All mathematics categories through the arXiv API. The app expands the archive into its documented categories.",
+    "reference": "https://arxiv.org/category_taxonomy"
+  },
+  {
+    "id": "arxiv-stat",
+    "name": "arXiv · Statistics",
+    "kind": "Repository",
+    "areas": [
+      "Statistics",
+      "Mathematics"
+    ],
+    "url": "https://arxiv.org/list/stat/recent",
+    "adapter": "arxiv",
+    "config": "cat:stat",
+    "note": "Statistics categories through the arXiv API; includes preprints.",
+    "reference": "https://arxiv.org/category_taxonomy"
+  },
+  {
+    "id": "entropy-mdpi",
+    "name": "Entropy",
+    "kind": "Journal",
+    "areas": [
+      "Entropy",
+      "Statistics",
+      "Mathematics",
+      "Quantum information"
+    ],
+    "url": "https://www.mdpi.com/journal/entropy",
+    "adapter": "crossref",
+    "issn": "1099-4300",
+    "note": "Journal metadata through the Crossref ISSN API, including historical dates. Abstract coverage varies.",
+    "reference": "https://www.mdpi.com/journal/entropy"
+  },
+  {
+    "id": "mathematics-mdpi",
+    "name": "Mathematics",
+    "kind": "Journal",
+    "areas": [
+      "Mathematics",
+      "Statistics"
+    ],
+    "url": "https://www.mdpi.com/journal/mathematics",
+    "adapter": "crossref",
+    "issn": "2227-7390",
+    "note": "Journal metadata through the Crossref ISSN API, including historical dates. Abstract coverage varies.",
+    "reference": "https://www.mdpi.com/journal/mathematics"
+  },
+  {
+    "id": "stats-mdpi",
+    "name": "Stats",
+    "kind": "Journal",
+    "areas": [
+      "Statistics",
+      "Mathematics"
+    ],
+    "url": "https://www.mdpi.com/journal/stats",
+    "adapter": "crossref",
+    "issn": "2571-905X",
+    "note": "Statistics journal metadata through the Crossref ISSN API. Abstract coverage varies.",
+    "reference": "https://www.mdpi.com/journal/stats/about"
+  },
+  {
+    "id": "electronic-journal-statistics",
+    "name": "Electronic Journal of Statistics",
+    "kind": "Journal",
+    "areas": [
+      "Statistics",
+      "Mathematics"
+    ],
+    "url": "https://projecteuclid.org/journals/electronic-journal-of-statistics",
+    "adapter": "crossref",
+    "issn": "1935-7524",
+    "note": "Open statistics journal, monitored through the Crossref ISSN API. Abstract coverage varies.",
+    "reference": "https://projecteuclid.org/journals/electronic-journal-of-statistics"
+  },
+  {
     "id": "iacr-eprint",
     "name": "IACR Cryptology ePrint Archive",
     "kind": "Repository",
@@ -207,7 +293,8 @@
     "adapter": "feed",
     "config": "https://www.nature.com/npjqi.rss",
     "note": "Official RSS 1.0 feed; items currently contain titles, dates and DOIs, but no abstracts.",
-    "reference": "https://www.nature.com/npjqi/for-authors-and-referees/about/journal-information"
+    "reference": "https://www.nature.com/npjqi/for-authors-and-referees/about/journal-information",
+    "issn": "2056-6387"
   },
   {
     "id": "prx-quantum",
