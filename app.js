@@ -86,7 +86,14 @@ function navigate(next){if(!connected){showConnect();return;}if((next==='setting
 function head(kicker,title,subtitle,action=''){return `<div class="page-head"><div><div class="eyebrow">${e(kicker)}</div><h1>${e(title)}</h1><p class="subtitle">${e(subtitle)}</p></div>${action}</div>`;}
 function empty(icon,title,copy,action=''){return `<div class="empty"><div class="empty-icon">${icon}</div><strong>${e(title)}</strong><p>${e(copy)}</p>${action}</div>`;}
 function pill(label,type=''){return `<span class="pill ${type}"><span class="dot"></span>${e(label)}</span>`;}
-function draw(){if(!state&&page!=='users'&&page!=='settings')return;if(page==='discover')searchRenderKey='';main.innerHTML=({overview:overview,sources:sources,topics:topics,discover:discover,library:library,settings:settings,users:users}[page])();renderTasks();}
+function draw(){
+ if(!state&&page!=='users'&&page!=='settings')return;
+ const openPeriods=page==='sources'?new Set([...main.querySelectorAll('.coverage-panel[open]')].map(el=>el.dataset.sourceId)):null;
+ if(page==='discover')searchRenderKey='';
+ main.innerHTML=({overview:overview,sources:sources,topics:topics,discover:discover,library:library,settings:settings,users:users}[page])();
+ if(openPeriods)main.querySelectorAll('.coverage-panel').forEach(el=>{if(openPeriods.has(el.dataset.sourceId))el.open=true;});
+ renderTasks();
+}
 function llmNotice(){const missing=Object.entries(state?.llm_status||{}).filter(([,value])=>!value.usable&&!value.optional);return missing.length?`<div class="banner"><div><strong>No usable LLM for ${missing.map(([role])=>e(role)).join(', ')}</strong><p>${missing.map(([role,value])=>`${e(role)}: ${e(value.reason)}`).join(' · ')}. Search and source collection still work.</p></div></div>`:'';}
 function taskPanel(){return `<div class="panel" id="task-panel"></div>`;}
 function paperStatusPill(p){
@@ -137,7 +144,7 @@ function coverageDetails(source){
  if(!history?.runs?.length)return '';
  const labels={complete:'Fully processed',processing_incomplete:'Processing incomplete',collection_error:'Collection failed',unverified:'Older run: processing unverified',source_changed:'Source settings changed; rerun',running:'Running'};
  const verified=history.complete_intervals||[];
- return `<details class="panel coverage-panel"><summary>Past periods for ${e(source.name)} · ${verified.length} verified interval${verified.length===1?'':'s'}</summary><p class="hint">A period is verified only when collection finished and every encountered paper has a completed screening outcome. A rerun can verify an older period without screening duplicates again.</p>${verified.length?`<div class="coverage-intervals">${verified.map(span=>`<span class="pill">${e(span.start_date)} → ${e(span.end_date)} fully processed</span>`).join('')}</div>`:'<p class="hint">No fully processed period has been verified yet.</p>'}<div class="list">${history.runs.map(run=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(run.start_date)} → ${e(run.end_date)} · ${e(labels[run.status]||run.status)}</div><div class="row-sub">${run.found} checked · ${run.added} new · ${run.linked} linked · ${run.outstanding} need processing${run.finished_at?` · Finished ${fmt(run.finished_at)}`:''}</div>${run.error?`<div class="error-note">${e(run.error)}</div>`:''}</div></div>`).join('')}</div></details>`;
+ return `<details class="panel coverage-panel" data-source-id="${source.id}"><summary>Past periods for ${e(source.name)} · ${verified.length} verified interval${verified.length===1?'':'s'}</summary><p class="hint">A period is verified only when collection finished and every encountered paper has a completed screening outcome. A rerun can verify an older period without screening duplicates again.</p>${verified.length?`<div class="coverage-intervals">${verified.map(span=>`<span class="pill">${e(span.start_date)} → ${e(span.end_date)} fully processed</span>`).join('')}</div>`:'<p class="hint">No fully processed period has been verified yet.</p>'}<div class="list">${history.runs.map(run=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(run.start_date)} → ${e(run.end_date)} · ${e(labels[run.status]||run.status)}</div><div class="row-sub">${run.found} checked · ${run.added} new · ${run.linked} linked · ${run.outstanding} need processing${run.finished_at?` · Finished ${fmt(run.finished_at)}`:''}</div>${run.error?`<div class="error-note">${e(run.error)}</div>`:''}</div></div>`).join('')}</div></details>`;
 }
 function sources(){
  return head('Mode 01','Monitored sources','Check chosen repositories on your schedule. Each site needs an adapter that knows how to read its papers.',adminMode?`<button class="button secondary" data-action="show-scraper">+ Add custom scraper</button>`:'')
