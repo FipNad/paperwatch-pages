@@ -337,7 +337,7 @@ function paperCards(papers){
  }).join(''):empty('▤','No papers match these filters','Change the publication, found, or matching filters to see more papers.');
 }
 
-async function refreshLibrary(reset=true){
+async function refreshLibrary(reset=true,persist=false){
  if(page!=='library')return;
  const from=$('#library-from')?.value||'',to=$('#library-to')?.value||'',publishedFrom=$('#library-published-from')?.value||'',publishedTo=$('#library-published-to')?.value||'',status=$('#library-filter')?.value||'all',group=$('#library-group')?.value||'',query=$('#library-search')?.value.trim()||'',sort=$('#library-sort')?.value||'found_desc';
  if(from&&to&&from>to){toast('Found-from date must be before found-through date.',true);return;}
@@ -358,7 +358,7 @@ async function refreshLibrary(reset=true){
   $('#library-count').textContent=`${libraryData.papers.length} of ${libraryData.total} shown`;
   $('#library-summary-count').textContent=`${libraryData.papers.length} of ${libraryData.total} shown`;
   $('#library-more').hidden=libraryData.papers.length>=libraryData.total;
-  savePreferences({library_filter:status,library_from:from,library_to:to,library_published_from:publishedFrom,library_published_to:publishedTo,library_group:group,library_query:query,library_sort:sort});
+  if(persist)savePreferences({library_filter:status,library_from:from,library_to:to,library_published_from:publishedFrom,library_published_to:publishedTo,library_group:group,library_query:query,library_sort:sort});
  }catch(err){toast(err.message,true);}
 }
 
@@ -499,7 +499,7 @@ document.addEventListener('click', async ev=>{
   if(action==='more-library'){await refreshLibrary(false);return;}
   if(action==='export-library'){await downloadLibrary();toast('Library CSV downloaded.');return;}
   if(action==='refresh-library'){await load(false);await refreshLibrary(true);return;}
-  if(action==='search-library'){await refreshLibrary(true);return;}
+  if(action==='search-library'){await refreshLibrary(true,true);return;}
   if(action==='scan-duplicates'){
    const result=await api('/api/papers/duplicates/scan',{method:'POST'});
    if(result.job_id)trackedPaperJobIds.add(result.job_id);
@@ -534,7 +534,7 @@ document.addEventListener('click', async ev=>{
   }
   if(action==='clear-merge'){mergeSelectedPapers.clear();renderMergeSelection();if($('#paper-list'))$('#paper-list').innerHTML=paperCards(libraryData?.papers||[]);return;}
   if(action==='review-merge'){await showMergeReview();return;}
-  if(action==='select-group'){$('#library-group').value=String(id);await refreshLibrary(true);return;}
+  if(action==='select-group'){$('#library-group').value=String(id);await refreshLibrary(true,true);return;}
   if(action==='toggle-source'){const s=state.sources.find(x=>x.id===id);await api(`/api/sources/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!s.enabled})});toast(s.enabled?'Source paused.':'Source resumed.');await load();return;}
   if(action==='delete-source'){if(!confirm('Delete this source? Papers already found will stay in the library.'))return;await api(`/api/sources/${id}`,{method:'DELETE'});toast('Source deleted.');await load();return;}
   if(action==='profile-topic'){await api(`/api/topics/${id}/profile`,{method:'POST'});toast('Profile regeneration queued.');await load();return;}
@@ -621,7 +621,7 @@ document.addEventListener('submit',async ev=>{
  }catch(err){toast(err.message,true);}
 });
 document.addEventListener('input',ev=>{if(ev.target.closest('form'))dirtyForm=true;if(ev.target.id==='catalog-search'){catalogText=ev.target.value;dirtyForm=true;renderCatalog();}});
-document.addEventListener('keydown',ev=>{if(ev.target.id==='library-search'&&ev.key==='Enter'){ev.preventDefault();refreshLibrary(true);}});
+document.addEventListener('keydown',ev=>{if(ev.target.id==='library-search'&&ev.key==='Enter'){ev.preventDefault();refreshLibrary(true,true);}});
 function savePreferences(patch){if(!connected)return;api('/api/preferences',{method:'PATCH',body:JSON.stringify(patch)}).catch(err=>toast(err.message,true));}
 document.addEventListener('change',ev=>{
  if(ev.target.closest('form'))dirtyForm=true;
@@ -635,13 +635,13 @@ document.addEventListener('change',ev=>{
   if(ev.target.value==='month'){from=today.slice(0,7)+'-01';to=today;}
   if(ev.target.value!=='custom'){
    const prefix=ev.target.id==='library-period'?'library':'library-published';
-   $(`#${prefix}-from`).value=from;$(`#${prefix}-to`).value=to;refreshLibrary(true);
+   $(`#${prefix}-from`).value=from;$(`#${prefix}-to`).value=to;refreshLibrary(true,true);
   }
  }
  if(['library-filter','library-group','library-sort','library-from','library-to','library-published-from','library-published-to'].includes(ev.target.id)){
   if(['library-from','library-to'].includes(ev.target.id))$('#library-period').value='custom';
   if(['library-published-from','library-published-to'].includes(ev.target.id))$('#library-published-period').value='custom';
-  refreshLibrary(true);
+  refreshLibrary(true,true);
  }
 });
 $('#refresh').addEventListener('click',async()=>{if(!connected){showConnect();return;}await load();if(page==='library'){refreshLibrary(true);refreshDuplicateCandidates(true);}if(page==='discover'&&currentSearchId)showSearch(currentSearchId);});
