@@ -25,6 +25,8 @@ let dirtyForm = false;
 let searchFrozen = false;
 let libraryData = null;
 let libraryOffset = 0;
+let duplicateData = null;
+const mergeSelectedPapers = new Map();
 const trackedPaperJobIds = new Set();
 const titles = {overview:'Overview',sources:'Monitored sources',topics:'Interest topics',discover:'Discover papers',library:'Paper library',settings:'Model settings',users:'Users'};
 const e = (value='') => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -61,11 +63,12 @@ function connectInvite(link){
  location.hash=target.hash;
  return api('/api/state').then(profile=>{if(profile.user.username!==selectedUsername)throw new Error('Invite does not match this profile.');connected=true;$('#connection-switch').hidden=false;$('#connection-switch').textContent='Leave profile';return startApp();}).catch(error=>{backendAuth='';location.hash='';throw error;});
 }
-async function openPdf(id){
+async function openPdf(id,versionId=null){
  const preview=window.open('', '_blank');
  try {
   const headers={...(backendAuth?{'Authorization':backendAuth}:{}),...(adminMode?{'X-Paperwatch-User':selectedUsername}:{})};
-  const response=await fetch((publicPage?backendUrl:'')+`/api/papers/${id}/pdf`,{headers,cache:'no-store'});
+  const path=versionId?`/api/papers/${id}/versions/${versionId}/pdf`:`/api/papers/${id}/pdf`;
+  const response=await fetch((publicPage?backendUrl:'')+path,{headers,cache:'no-store'});
   if(!response.ok)throw new Error(`PDF unavailable (${response.status})`);
   const objectUrl=URL.createObjectURL(await response.blob());
   if(preview)preview.location.href=objectUrl;else window.open(objectUrl,'_blank');
@@ -82,7 +85,7 @@ async function load(render=true){
     else renderTasks();
   } catch(err) {toast(err.message,true);}
 }
-function navigate(next){if(!connected){showConnect();return;}if((next==='settings'||next==='users')&&!adminMode)return;page=next;dirtyForm=false;document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));$('#crumb-page').textContent=titles[page].toUpperCase();draw();if(page==='discover'&&currentSearchId)showSearch(currentSearchId);if(page==='library')refreshLibrary(true);window.scrollTo({top:0,behavior:'smooth'});}
+function navigate(next){if(!connected){showConnect();return;}if((next==='settings'||next==='users')&&!adminMode)return;page=next;dirtyForm=false;document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));$('#crumb-page').textContent=titles[page].toUpperCase();draw();if(page==='discover'&&currentSearchId)showSearch(currentSearchId);if(page==='library'){refreshLibrary(true);refreshDuplicateCandidates(true);for(const job of state.jobs?.items||[]){if(job.kind==='duplicate-scan'&&['queued','running','cancel_requested'].includes(job.status))trackedPaperJobIds.add(job.id);}}window.scrollTo({top:0,behavior:'smooth'});}
 function head(kicker,title,subtitle,action=''){return `<div class="page-head"><div><div class="eyebrow">${e(kicker)}</div><h1>${e(title)}</h1><p class="subtitle">${e(subtitle)}</p></div>${action}</div>`;}
 function empty(icon,title,copy,action=''){return `<div class="empty"><div class="empty-icon">${icon}</div><strong>${e(title)}</strong><p>${e(copy)}</p>${action}</div>`;}
 function pill(label,type=''){return `<span class="pill ${type}"><span class="dot"></span>${e(label)}</span>`;}
@@ -243,6 +246,30 @@ async function showSearch(id){
  }catch(err){toast(err.message,true);}
 }
 
+function duplicatePanel(){
+ const data=duplicateData;
+ const scanning=(state?.jobs?.items||[]).some(job=>job.kind==='duplicate-scan'&&['queued','running','cancel_requested'].includes(job.status));
+ const status=data?.scanned_at?`${data.total} possible pair${data.total===1?'':'s'} from ${data.paper_count} papers · scanned ${fmt(data.scanned_at)}`:'No scan yet';
+ const pairs=data?.pairs||[];
+ return `<div class="panel" id="duplicate-panel"><div class="panel-head"><h2>Find possible duplicates</h2><span class="panel-kicker">${e(status)}</span></div><p class="intro">Scan only papers marked relevant by the filtering models, including relevant papers hidden by library filters. Suggestions use titles, authors, DOIs, and article links. No model or provider credits are used. Review each pair before merging.</p><div class="form-actions"><button class="button" data-action="scan-duplicates" ${scanning?'disabled':''}>${scanning?'Scanning library…':data?.scanned_at?'Scan again':'Find duplicates'}</button></div>${data===null?'<p class="muted" style="margin-top:15px">Loading suggestions…</p>':!data.scanned_at?'<p class="muted" style="margin-top:15px">Run a scan to see possible duplicates.</p>':pairs.length?`<div class="duplicate-results">${pairs.map(pair=>{const a=pair.paper_a,b=pair.paper_b;return `<div class="duplicate-pair"><div class="badge-line">${pill(`Match score ${pair.score}/100`,'blue')}<span class="row-sub">${e(pair.reason)}</span></div><div class="duplicate-columns">${[a,b].map(p=>`<div><div class="row-title">${e(p.title)}</div><div class="row-sub">${e((p.authors||[]).join(', ')||'Authors unavailable')} · ${e(p.published||'Date unknown')}</div><div class="row-sub">${e((p.sources||[]).join(' · ')||'Source unknown')}</div><div class="row-sub">DOI: ${e((p.dois||[]).join(' · ')||p.doi||'None recorded')}</div></div>`).join('')}</div><div class="row-actions"><button class="button secondary small" data-action="review-duplicate-pair" data-a="${a.id}" data-b="${b.id}">Review and merge</button><button class="button tertiary small" data-action="dismiss-duplicate-pair" data-a="${a.id}" data-b="${b.id}">Not the same paper</button></div></div>`;}).join('')}</div><div class="form-actions"><span class="row-sub">${pairs.length} of ${data.total} shown</span>${pairs.length<data.total?'<button class="button secondary small" data-action="more-duplicates">Load more suggestions</button>':''}</div>`:'<p class="muted" style="margin-top:15px">No possible duplicates found in this scan. Different titles may still describe the same work; you can select those papers manually below.</p>'}</div>`;
+}
+function renderDuplicatePanel(){const panel=$('#duplicate-panel');if(panel)panel.outerHTML=duplicatePanel();}
+async function refreshDuplicateCandidates(reset=true){
+ if(page!=='library')return;
+ try{
+  const offset=reset?0:(duplicateData?.pairs?.length||0);
+  const result=await api(`/api/papers/duplicates?offset=${offset}&limit=25`);
+  if(page!=='library')return;
+  if(!reset&&duplicateData?.scanned_at!==result.scanned_at){await refreshDuplicateCandidates(true);return;}
+  duplicateData=reset?result:{...result,pairs:[...(duplicateData?.pairs||[]),...result.pairs]};
+  renderDuplicatePanel();
+ }catch(err){toast(err.message,true);}
+}
+function mergeSelectionPanel(){
+ const selected=[...mergeSelectedPapers.values()];
+ return `<div class="panel" id="merge-panel"><div class="panel-head"><h2>Merge duplicate papers</h2><span class="panel-kicker">${selected.length} selected</span></div><p class="intro">Search the library, select two or more versions of the same paper, then choose which record to keep. The scan suggests possible duplicates; you choose what to merge. The combined record retains every DOI, discovery source, and saved PDF.</p>${selected.length?`<div class="coverage-intervals">${selected.map(p=>`<span class="pill">${e(p.title.slice(0,80))} <button class="button tertiary small" data-action="toggle-merge-paper" data-id="${p.id}" aria-label="Remove ${e(p.title)} from merge">×</button></span>`).join('')}</div>`:''}<div class="form-actions"><button class="button" data-action="review-merge" ${selected.length<2?'disabled':''}>Review merge</button>${selected.length?'<button class="button secondary" data-action="clear-merge">Clear selection</button>':''}</div></div>`;
+}
+function renderMergeSelection(){const panel=$('#merge-panel');if(panel)panel.outerHTML=mergeSelectionPanel();}
 function library(){
  const papers=libraryData?.papers||[];
  const prefs=state.preferences||{};
@@ -251,17 +278,25 @@ function library(){
  const groupStatus=state.llm_status?.group||{};
  return head('Archive','Paper library','Papers discovered by your monitored sources, with matching decisions and saved summaries.',`<div class="row-actions"><button class="button secondary" data-action="refresh-library">Refresh papers</button><button class="button secondary" data-action="retry-pending" ${state.paper_stats?.retryable===0?'disabled title="No papers are eligible for retry"':''}>↻ &nbsp;Retry errors and pending${state.paper_stats?.retryable!=null?` (${state.paper_stats.retryable})`:''}</button></div>`)
  + llmNotice()
+ + duplicatePanel()
+ + mergeSelectionPanel()
  + `<div class="panel"><div class="panel-head"><h2>Similarity groups</h2><span class="panel-kicker">Built on request</span></div><p class="intro">The grouping model organizes papers by topic and method. Rebuilding replaces your previous groups after the task succeeds. New papers are not grouped until you rebuild.</p><form id="groupForm"><div class="form-grid"><div class="field"><label>Papers to group</label><select name="scope"><option value="relevant">Relevant papers (${state.paper_stats?.relevant||0})</option><option value="all">All papers (${state.paper_stats?.total||0})</option></select></div><div class="field"><label>Grouping model</label><div class="hint">${e(groupStatus.usable?`${groupStatus.provider} / ${groupStatus.model}`:groupStatus.reason||'Ask the administrator to set a grouping model.')}</div></div></div><p class="hint">Grouping all papers makes many model requests; watch the task progress and your provider balance.</p><div class="form-actions"><button class="button" type="submit" ${groupStatus.usable?'':'disabled'}>Group papers</button></div></form>${groups.length?`<div class="list" style="margin-top:18px">${groups.map(group=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(group.name)} · ${group.paper_count} papers</div><div class="row-sub">${e(group.description)} · ${e(group.scope)} · ${e(group.model)} · ${fmt(group.created_at)}</div></div><button class="button secondary small" data-action="select-group" data-id="${group.id}">Show papers</button></div>`).join('')}</div>`:'<p class="hint">No similarity groups yet.</p>'}</div>`
  + `<div class="panel"><div class="panel-head"><h2>Filter papers</h2><span id="library-count" class="panel-kicker">${libraryData?`${papers.length} of ${libraryData.total} shown`:'Loading…'}</span></div>
+ <div class="field"><label for="library-search">Find by title, abstract, DOI, or source</label><div class="row-actions"><input id="library-search" type="search" value="${e(prefs.library_query||'')}" placeholder="Search your paper library"><button class="button secondary" data-action="search-library">Search</button></div></div>
  <div class="form-grid"><div class="field"><label>Matching decision</label><select id="library-filter"><option value="all" ${prefs.library_filter==='all'?'selected':''}>All papers</option><option value="relevant" ${prefs.library_filter==='relevant'?'selected':''}>Relevant only</option><option value="pending" ${prefs.library_filter==='pending'?'selected':''}>Needs review</option></select></div><div class="field"><label>Similarity group</label><select id="library-group"><option value="">All groups</option>${groups.map(group=>`<option value="${group.id}" ${selectedGroup===String(group.id)?'selected':''}>${e(group.name)} (${group.paper_count})</option>`).join('')}</select></div></div>
  <h3 class="library-filter-heading">Publication date</h3><div class="form-grid"><div class="field"><label>Quick publication interval</label><select id="library-published-period"><option value="all">Any date</option><option value="today">Today</option><option value="week">Last 7 days</option><option value="month">This month</option><option value="custom" ${prefs.library_published_from||prefs.library_published_to?'selected':''}>Custom interval</option></select></div><div class="field"><label>Published from</label><input id="library-published-from" type="date" value="${e(prefs.library_published_from||'')}"></div><div class="field"><label>Published through</label><input id="library-published-to" type="date" value="${e(prefs.library_published_to||'')}"></div></div><p class="hint">Both dates are included. Set the same date twice for one day. Papers without a complete publication date are excluded when this filter is active.</p>
  <h3 class="library-filter-heading">Date found by Paperwatch</h3><div class="form-grid"><div class="field"><label>Quick found interval</label><select id="library-period"><option value="all">Any date</option><option value="today">Today</option><option value="week">Last 7 days</option><option value="month">This month</option><option value="custom" ${prefs.library_from||prefs.library_to?'selected':''}>Custom interval</option></select></div><div class="field"><label>Found from (UTC)</label><input id="library-from" type="date" value="${e(prefs.library_from||'')}"></div><div class="field"><label>Found through (UTC)</label><input id="library-to" type="date" value="${e(prefs.library_to||'')}"></div></div></div><div id="paper-list">${libraryData?paperCards(papers):'<p class="muted">Loading papers…</p>'}</div><div class="form-actions" id="library-more" ${!libraryData||papers.length>=libraryData.total?'hidden':''}><button class="button secondary" data-action="more-library">Load more papers</button></div>` + taskPanel();
 }
-function paperCards(papers){return papers.length?papers.map(p=>`<div class="paper-card"><div class="card-top"><div><div class="badge-line">${paperStatusPill(p)}${p.score!=null?pill(`${p.score}% match`,'blue'):''}</div><div class="card-title" style="font-size:16px;margin-top:10px">${e(p.title)}</div><div class="card-meta">${e((state.sources.find(s=>s.id===p.source_id)||{}).name||'Source')} · Published ${e(p.published||'unknown')} · Found ${e((p.first_seen||'').slice(0,10))} UTC${p.collection_method?` · via ${e(p.collection_method)}`:''}</div></div><button class="button secondary small" data-action="detail-paper" data-id="${p.id}">Details</button></div><p class="card-description">${e((p.abstract||'Abstract unavailable').slice(0,420))}${(p.abstract||'').length>420?'…':''}</p>${p.prefilter_reason?`<div class="summary">First pass: ${e(p.prefilter_reason)}</div>`:''}${p.filter_reason?`<div class="summary">${e(p.filter_reason)}</div>`:''}${p.error?`<div class="error-note">${e(p.error)}</div>`:''}<div class="card-foot"><div class="card-meta">${p.filter_status==='error'?'Filtering failed':p.filter_model?`Filtered with ${e(p.filter_provider)} / ${e(p.filter_model)}`:p.filter_status==='prefiltered_out'?'Full processing skipped':'Awaiting filter'}${p.introduction?' · Introduction extracted':''}</div><div class="row-actions"><a class="button tertiary small" href="${url(p.url)}" target="_blank" rel="noopener">Original ↗</a>${p.pdf_path?`<button class="button secondary small" data-action="open-pdf" data-id="${p.id}">Saved PDF</button>`:''}${p.filter_status==='error'||p.filter_status==='needs_topics'||p.filter_status==='prefiltered_out'||(p.relevant&&!p.summary)?`<button class="button secondary small" data-action="retry-paper" data-id="${p.id}">Retry</button>`:''}</div></div></div>`).join(''):empty('▤','No papers match these filters','Change the publication, found, or matching filters to see more papers.');}
+function paperCards(papers){
+ return papers.length?papers.map(p=>{
+  const sourceNames=p.sources?.length?p.sources:[(state.sources.find(s=>s.id===p.source_id)||{}).name||'Source'];
+  return `<div class="paper-card"><div class="card-top"><div><div class="badge-line">${paperStatusPill(p)}${p.score!=null?pill(`${p.score}% match`,'blue'):''}</div><div class="card-title" style="font-size:16px;margin-top:10px">${e(p.title)}</div><div class="card-meta">${e(sourceNames.join(' · '))} · Published ${e(p.published||'unknown')} · Found ${e((p.first_seen||'').slice(0,10))} UTC${p.dois?.length?` · ${p.dois.length} DOI${p.dois.length===1?'':'s'}`:''}</div></div><div class="row-actions"><button class="button secondary small" data-action="toggle-merge-paper" data-id="${p.id}">${mergeSelectedPapers.has(p.id)?'Selected ✓':'Select duplicate'}</button><button class="button secondary small" data-action="detail-paper" data-id="${p.id}">Details</button></div></div><p class="card-description">${e((p.abstract||'Abstract unavailable').slice(0,420))}${(p.abstract||'').length>420?'…':''}</p>${p.prefilter_reason?`<div class="summary">First pass: ${e(p.prefilter_reason)}</div>`:''}${p.filter_reason?`<div class="summary">${e(p.filter_reason)}</div>`:''}${p.error?`<div class="error-note">${e(p.error)}</div>`:''}<div class="card-foot"><div class="card-meta">${p.filter_status==='error'?'Filtering failed':p.filter_model?`Filtered with ${e(p.filter_provider)} / ${e(p.filter_model)}`:p.filter_status==='prefiltered_out'?'Full processing skipped':'Awaiting filter'}${p.introduction?' · Introduction extracted':''}</div><div class="row-actions"><a class="button tertiary small" href="${url(p.url)}" target="_blank" rel="noopener">Original ↗</a>${p.pdf_path?`<button class="button secondary small" data-action="open-pdf" data-id="${p.id}">Saved PDF</button>`:''}${p.filter_status==='error'||p.filter_status==='needs_topics'||p.filter_status==='prefiltered_out'||(p.relevant&&!p.summary)?`<button class="button secondary small" data-action="retry-paper" data-id="${p.id}">Retry</button>`:''}</div></div></div>`;
+ }).join(''):empty('▤','No papers match these filters','Change the publication, found, or matching filters to see more papers.');
+}
 
 async function refreshLibrary(reset=true){
  if(page!=='library')return;
- const from=$('#library-from')?.value||'',to=$('#library-to')?.value||'',publishedFrom=$('#library-published-from')?.value||'',publishedTo=$('#library-published-to')?.value||'',status=$('#library-filter')?.value||'all',group=$('#library-group')?.value||'';
+ const from=$('#library-from')?.value||'',to=$('#library-to')?.value||'',publishedFrom=$('#library-published-from')?.value||'',publishedTo=$('#library-published-to')?.value||'',status=$('#library-filter')?.value||'all',group=$('#library-group')?.value||'',query=$('#library-search')?.value.trim()||'';
  if(from&&to&&from>to){toast('Found-from date must be before found-through date.',true);return;}
  if(publishedFrom&&publishedTo&&publishedFrom>publishedTo){toast('Published-from date must be before published-through date.',true);return;}
  const offset=reset?0:libraryOffset;
@@ -270,6 +305,7 @@ async function refreshLibrary(reset=true){
   if(from)params.set('start_date',from);if(to)params.set('end_date',to);
   if(publishedFrom)params.set('published_start_date',publishedFrom);if(publishedTo)params.set('published_end_date',publishedTo);
   if(group)params.set('group_id',group);
+  if(query)params.set('q',query);
   const result=await api('/api/papers?'+params);
   if(page!=='library')return;
   libraryData=reset?result:{...result,papers:[...(libraryData?.papers||[]),...result.papers]};
@@ -277,7 +313,7 @@ async function refreshLibrary(reset=true){
   $('#paper-list').innerHTML=paperCards(libraryData.papers);
   $('#library-count').textContent=`${libraryData.papers.length} of ${libraryData.total} shown`;
   $('#library-more').hidden=libraryData.papers.length>=libraryData.total;
-  savePreferences({library_filter:status,library_from:from,library_to:to,library_published_from:publishedFrom,library_published_to:publishedTo,library_group:group});
+  savePreferences({library_filter:status,library_from:from,library_to:to,library_published_from:publishedFrom,library_published_to:publishedTo,library_group:group,library_query:query});
  }catch(err){toast(err.message,true);}
 }
 
@@ -312,11 +348,22 @@ function showHistorySource(id){
  document.body.append(div);
 }
 
-function showPaper(id){
- const p=(libraryData?.papers||[]).find(x=>x.id===id)||state.papers.find(x=>x.id===id);if(!p)return;
+async function showMergeReview(){
+ const ids=[...mergeSelectedPapers.keys()];
+ if(ids.length<2)throw new Error('Select at least two papers to merge.');
+ const papers=await Promise.all(ids.map(async id=>(await api(`/api/papers/${id}`)).paper));
+ const div=document.createElement('div');div.className='detail-overlay';div.id='detail-overlay';
+ div.innerHTML=`<div class="detail" role="dialog" aria-modal="true" aria-label="Review duplicate paper merge"><button class="icon-button detail-close" data-action="close-detail">×</button><div class="eyebrow">REVIEW MERGE</div><h2>Keep one paper entry</h2><p>Confirm these records describe the same work. Choose the title and original link to keep. Paperwatch keeps the earliest publication and discovery dates, fills missing metadata, retains the strongest completed screening result, and records every DOI, source version, and saved PDF. Extra library cards are removed.</p><form id="mergeForm">${papers.map((p,index)=>`<section><label><input type="radio" name="keep_id" value="${p.id}" ${index===0?'checked':''}> <strong>Keep ${e(p.title)}</strong></label><p>${e(p.published||'Date unknown')} · ${e((p.sources||[]).join(' · ')||'Source unknown')}</p><p>DOIs: ${e((p.dois||[]).join(' · ')||'None supplied')}</p><p class="hint">${e((p.abstract||'Abstract unavailable').slice(0,280))}${(p.abstract||'').length>280?'…':''}</p></section>`).join('')}<div class="form-actions"><button class="button" type="submit">Merge ${papers.length} papers</button><button class="button secondary" type="button" data-action="close-detail">Cancel</button></div></form></div>`;
+ document.body.append(div);
+}
+
+async function showPaper(id){
+ const p=(await api(`/api/papers/${id}`)).paper;
  detailPaperId=id;
  const div=document.createElement('div');div.className='detail-overlay';div.id='detail-overlay';
  div.innerHTML=`<div class="detail" role="dialog" aria-modal="true" aria-label="Paper details"><button class="icon-button detail-close" data-action="close-detail">×</button><div class="eyebrow">PAPER DETAILS</div><h2>${e(p.title)}</h2><div class="card-meta">${e((p.authors||[]).join(', '))} · ${e(p.published||'Date unknown')}</div><div class="badge-line" style="margin-top:13px">${paperStatusPill(p)}${p.score!=null?pill(`${p.score}% match`,'blue'):''}</div>${p.error?`<div class="error-note">${e(p.error)}</div>`:''}<section><h3>Abstract</h3><p>${e(p.abstract||'No abstract available.')}</p></section>${p.filter_reason?`<section><h3>Why it matched</h3><p>${e(p.filter_reason)}</p></section>`:''}${p.summary?`<section><h3>Summary</h3><p>${e(p.summary)}</p>${p.contributions?.length?`<h3>Contributions</h3><ul>${p.contributions.map(x=>`<li>${e(x)}</li>`).join('')}</ul>`:''}${p.limitations?.length?`<h3>Limitations</h3><ul>${p.limitations.map(x=>`<li>${e(x)}</li>`).join('')}</ul>`:''}</section>`:''}${p.introduction?`<section><h3>Introduction excerpt</h3><p>${e(p.introduction.slice(0,1600))}${p.introduction.length>1600?'…':''}</p></section>`:''}<section><h3>Provenance</h3><p>Found ${e((p.first_seen||'').slice(0,10)||'—')} UTC · ${e(p.collection_method||'Direct source')}</p>${p.prefilter_reason?`<p>First pass: ${e(p.prefilter_reason)} (${e(p.prefilter_provider||'—')} / ${e(p.prefilter_model||'—')})</p>`:''}<p>${e(p.filter_provider||'—')} / ${e(p.filter_model||'—')} filter · ${e(p.summary_provider||'—')} / ${e(p.summary_model||'—')} summary</p><div class="row-actions" style="justify-content:start"><a class="button" href="${url(p.url)}" target="_blank" rel="noopener">Open original ↗</a>${p.pdf_path?`<button class="button secondary" data-action="open-pdf" data-id="${p.id}">Open saved PDF</button>`:''}<button class="button secondary" data-action="retry-paper" data-id="${p.id}">Reprocess</button></div></section></div>`;
+ const versions=p.versions||[];
+ div.querySelector('.detail').insertAdjacentHTML('beforeend',`<section><h3>Discovered versions</h3>${versions.map(v=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(v.source_name)}</div><div class="row-sub">${e(v.title)} · Published ${e(v.published||'unknown')}${v.doi?` · DOI ${e(v.doi)}`:''}${v.collection_method==='Recovered source association'?' · Source association recovered from an earlier run; article metadata was not saved separately.':''}</div><div class="row-actions"><a class="button tertiary small" href="${url(v.url)}" target="_blank" rel="noopener">${v.collection_method==='Recovered source association'?'Source site':'Article'} ↗</a>${v.pdf_path?`<button class="button secondary small" data-action="open-version-pdf" data-id="${p.id}" data-version="${v.id}">Saved PDF</button>`:''}</div></div></div>`).join('')}</section>`);
  document.body.append(div);
 }
 function showScraper(){
@@ -346,7 +393,7 @@ document.addEventListener('click', async ev=>{
   if(action==='close-detail'){btn.closest('.detail-overlay').remove();return;}
   if(action==='copy-invite'){await navigator.clipboard.writeText($('#invite-copy').value);toast('Invite link copied.');return;}
   if(action==='select-user'){
-   selectedUsername=btn.dataset.name;currentSearchId=null;currentSearchData=null;searchRenderKey='';libraryData=null;trackedPaperJobIds.clear();includeLocations.clear();hideLocations.clear();catalogKind='all';catalogArea='all';catalogText='';dirtyForm=false;
+   selectedUsername=btn.dataset.name;currentSearchId=null;currentSearchData=null;searchRenderKey='';libraryData=null;duplicateData=null;mergeSelectedPapers.clear();trackedPaperJobIds.clear();includeLocations.clear();hideLocations.clear();catalogKind='all';catalogArea='all';catalogText='';dirtyForm=false;
    await startApp();navigate('overview');$('#workspace-detail').textContent=`Viewing ${selectedUsername}`;return;
   }
   if(action==='rotate-user'){
@@ -399,6 +446,41 @@ document.addEventListener('click', async ev=>{
   if(action==='more-search'){const result=await api(`/api/searches/${id}/more`,{method:'POST'});toast(result.queued?'Loading another page.':'Page already loading.');await load(false);return;}
   if(action==='more-library'){await refreshLibrary(false);return;}
   if(action==='refresh-library'){await load(false);await refreshLibrary(true);return;}
+  if(action==='search-library'){await refreshLibrary(true);return;}
+  if(action==='scan-duplicates'){
+   const result=await api('/api/papers/duplicates/scan',{method:'POST'});
+   if(result.job_id)trackedPaperJobIds.add(result.job_id);
+   toast(result.queued?'Duplicate scan started. See Tasks for progress.':'A duplicate scan is already queued.');
+   await load(false);renderDuplicatePanel();return;
+  }
+  if(action==='more-duplicates'){await refreshDuplicateCandidates(false);return;}
+  if(action==='dismiss-duplicate-pair'){
+   const a=Number(btn.dataset.a),b=Number(btn.dataset.b);
+   await api(`/api/papers/duplicates/${a}/${b}`,{method:'DELETE'});
+   await refreshDuplicateCandidates(true);toast('Suggestion dismissed.');return;
+  }
+  if(action==='review-duplicate-pair'){
+   const a=Number(btn.dataset.a),b=Number(btn.dataset.b);
+   const pair=(duplicateData?.pairs||[]).find(item=>item.paper_a.id===a&&item.paper_b.id===b);
+   if(!pair)throw new Error('This suggestion is no longer available.');
+   mergeSelectedPapers.clear();mergeSelectedPapers.set(a,pair.paper_a);mergeSelectedPapers.set(b,pair.paper_b);
+   renderMergeSelection();if($('#paper-list'))$('#paper-list').innerHTML=paperCards(libraryData?.papers||[]);
+   await showMergeReview();return;
+  }
+  if(action==='toggle-merge-paper'){
+   if(mergeSelectedPapers.has(id))mergeSelectedPapers.delete(id);
+   else{
+    const paper=(libraryData?.papers||[]).find(item=>item.id===id);
+    if(!paper)throw new Error('This paper is no longer in the current library page.');
+    if(mergeSelectedPapers.size>=10)throw new Error('Merge up to ten papers at a time.');
+    mergeSelectedPapers.set(id,paper);
+   }
+   renderMergeSelection();
+   if($('#paper-list'))$('#paper-list').innerHTML=paperCards(libraryData?.papers||[]);
+   return;
+  }
+  if(action==='clear-merge'){mergeSelectedPapers.clear();renderMergeSelection();if($('#paper-list'))$('#paper-list').innerHTML=paperCards(libraryData?.papers||[]);return;}
+  if(action==='review-merge'){await showMergeReview();return;}
   if(action==='select-group'){$('#library-group').value=String(id);await refreshLibrary(true);return;}
   if(action==='toggle-source'){const s=state.sources.find(x=>x.id===id);await api(`/api/sources/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!s.enabled})});toast(s.enabled?'Source paused.':'Source resumed.');await load();return;}
   if(action==='delete-source'){if(!confirm('Delete this source? Papers already found will stay in the library.'))return;await api(`/api/sources/${id}`,{method:'DELETE'});toast('Source deleted.');await load();return;}
@@ -406,13 +488,14 @@ document.addEventListener('click', async ev=>{
   if(action==='delete-topic'){if(!confirm('Delete this topic? Existing decisions remain.'))return;await api(`/api/topics/${id}`,{method:'DELETE'});toast('Topic deleted.');await load();return;}
   if(action==='retry-paper'){const result=await api(`/api/papers/${id}/retry`,{method:'POST'});if(result.job_id)trackedPaperJobIds.add(result.job_id);toast(result.queued?'Paper reprocessing queued.':'Paper is already queued.');await load(false);return;}
   if(action==='open-pdf'){await openPdf(id);return;}
+  if(action==='open-version-pdf'){await openPdf(id,Number(btn.dataset.version));return;}
   if(action==='retry-pending'){const result=await api('/api/papers/retry-pending',{method:'POST'});if(result.job_id)trackedPaperJobIds.add(result.job_id);toast(result.eligible===0?'No papers are eligible for retry.':result.queued?`${result.eligible} papers queued for reprocessing.`:'Batch is already queued.');await load(false);return;}
-  if(action==='detail-paper'){showPaper(id);return;}
+  if(action==='detail-paper'){await showPaper(id);return;}
   if(action==='view-search'){selectSearch(id);navigate('discover');return;}
  }catch(err){toast(err.message,true);}
 });
 document.addEventListener('submit',async ev=>{
- const f=ev.target;if(!['connectForm','sourceForm','historyForm','topicForm','searchForm','settingsForm','scraperForm','userForm','groupForm'].includes(f.id)&&!f.matches('.credential-card'))return;ev.preventDefault();
+ const f=ev.target;if(!['connectForm','sourceForm','historyForm','topicForm','searchForm','settingsForm','scraperForm','userForm','groupForm','mergeForm'].includes(f.id)&&!f.matches('.credential-card'))return;ev.preventDefault();
  const data=Object.fromEntries(new FormData(f).entries());
  try{
   if(f.id==='connectForm'){
@@ -469,6 +552,15 @@ document.addEventListener('submit',async ev=>{
    }
    return;
   }
+  if(f.id==='mergeForm'){
+   const keepId=Number(data.keep_id),removeIds=[...mergeSelectedPapers.keys()].filter(id=>id!==keepId);
+   if(!mergeSelectedPapers.has(keepId)||!removeIds.length)throw new Error('Choose which paper to keep.');
+   const result=await api('/api/papers/merge',{method:'POST',body:JSON.stringify({keep_id:keepId,remove_ids:removeIds})});
+   f.closest('.detail-overlay').remove();mergeSelectedPapers.clear();libraryData=null;
+   await load(false);draw();await refreshLibrary(true);await refreshDuplicateCandidates(true);
+   toast(`${result.merged} duplicate paper${result.merged===1?'':'s'} merged.`);
+   return;
+  }
   if(f.id==='searchForm'){
    const ids=[...f.querySelectorAll('input[name=source]:checked')].map(x=>Number(x.value));
    const result=await api('/api/search',{method:'POST',body:JSON.stringify({query:data.query,source_ids:ids,recent_days:Number(data.recent_days),start_date:data.start_date,end_date:data.end_date})});selectSearch(result.id);dirtyForm=false;toast('Search started.');await load();showSearch(result.id);return;
@@ -476,6 +568,7 @@ document.addEventListener('submit',async ev=>{
  }catch(err){toast(err.message,true);}
 });
 document.addEventListener('input',ev=>{if(ev.target.closest('form'))dirtyForm=true;if(ev.target.id==='catalog-search'){catalogText=ev.target.value;dirtyForm=true;renderCatalog();}});
+document.addEventListener('keydown',ev=>{if(ev.target.id==='library-search'&&ev.key==='Enter'){ev.preventDefault();refreshLibrary(true);}});
 function savePreferences(patch){if(!connected)return;api('/api/preferences',{method:'PATCH',body:JSON.stringify(patch)}).catch(err=>toast(err.message,true));}
 document.addEventListener('change',ev=>{
  if(ev.target.closest('form'))dirtyForm=true;
@@ -498,9 +591,26 @@ document.addEventListener('change',ev=>{
   refreshLibrary(true);
  }
 });
-$('#refresh').addEventListener('click',async()=>{if(!connected){showConnect();return;}await load();if(page==='library')refreshLibrary(true);if(page==='discover'&&currentSearchId)showSearch(currentSearchId);});
-$('#connection-switch').addEventListener('click',()=>{backendAuth='';state=null;adminState=null;connected=false;selectedUsername='';currentSearchId=null;currentSearchData=null;searchRenderKey='';libraryData=null;trackedPaperJobIds.clear();catalogKind='all';catalogArea='all';catalogText='';includeLocations.clear();hideLocations.clear();if(publicPage)location.hash='';document.querySelectorAll('.admin-only').forEach(el=>el.hidden=true);$('#connection-switch').hidden=true;showConnect();});
-setInterval(async()=>{if(!connected)return;await load(!dirtyForm&&page!=='discover'&&page!=='library');if(page==='discover'&&currentSearchId&&!searchFrozen)showSearch(currentSearchId);let paperJobFinished=false,groupJobFinished=false;for(const id of trackedPaperJobIds){const job=state?.jobs?.items?.find(item=>item.id===id);if(job&&['completed','failed','cancelled'].includes(job.status)){trackedPaperJobIds.delete(id);paperJobFinished=true;if(job.kind==='groups')groupJobFinished=true;}}if(groupJobFinished&&page==='library')draw();if(paperJobFinished&&page==='library')await refreshLibrary(true);},5000);
+$('#refresh').addEventListener('click',async()=>{if(!connected){showConnect();return;}await load();if(page==='library'){refreshLibrary(true);refreshDuplicateCandidates(true);}if(page==='discover'&&currentSearchId)showSearch(currentSearchId);});
+$('#connection-switch').addEventListener('click',()=>{backendAuth='';state=null;adminState=null;connected=false;selectedUsername='';currentSearchId=null;currentSearchData=null;searchRenderKey='';libraryData=null;duplicateData=null;mergeSelectedPapers.clear();trackedPaperJobIds.clear();catalogKind='all';catalogArea='all';catalogText='';includeLocations.clear();hideLocations.clear();if(publicPage)location.hash='';document.querySelectorAll('.admin-only').forEach(el=>el.hidden=true);$('#connection-switch').hidden=true;showConnect();});
+setInterval(async()=>{
+ if(!connected)return;
+ await load(!dirtyForm&&page!=='discover'&&page!=='library');
+ if(page==='discover'&&currentSearchId&&!searchFrozen)showSearch(currentSearchId);
+ let paperJobFinished=false,groupJobFinished=false,duplicateJobFinished=false;
+ for(const id of trackedPaperJobIds){
+  const job=state?.jobs?.items?.find(item=>item.id===id);
+  if(job&&['completed','failed','cancelled'].includes(job.status)){
+   trackedPaperJobIds.delete(id);paperJobFinished=true;
+   if(job.kind==='groups')groupJobFinished=true;
+   if(job.kind==='duplicate-scan')duplicateJobFinished=true;
+  }
+ }
+ if(groupJobFinished&&page==='library')draw();
+ if(paperJobFinished&&page==='library')await refreshLibrary(true);
+ if(duplicateJobFinished&&page==='library')await refreshDuplicateCandidates(true);
+ else if(page==='library')renderDuplicatePanel();
+},5000);
 async function startApp(){
  try{
   const results=await Promise.all([api('/api/scrapers'),fetch('./catalog.json').then(res=>res.json())]);
