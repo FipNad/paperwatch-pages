@@ -25,7 +25,10 @@ let dirtyForm = false;
 let searchFrozen = false;
 let libraryData = null;
 let libraryOffset = 0;
+let libraryRequestId = 0;
 let duplicateData = null;
+const coverageViews = new Map();
+const coverageMonths = new Map();
 const mergeSelectedPapers = new Map();
 const trackedPaperJobIds = new Set();
 const titles = {overview:'Overview',sources:'Monitored sources',topics:'Interest topics',discover:'Discover papers',library:'Paper library',settings:'Model settings',users:'Users'};
@@ -75,6 +78,17 @@ async function openPdf(id,versionId=null){
   setTimeout(()=>URL.revokeObjectURL(objectUrl),120000);
  }catch(error){if(preview)preview.close();throw error;}
 }
+async function downloadLibrary(){
+ const headers={...(backendAuth?{'Authorization':backendAuth}:{}),...(adminMode?{'X-Paperwatch-User':selectedUsername}:{})};
+ const response=await fetch((publicPage?backendUrl:'')+'/api/papers/export',{headers,cache:'no-store'});
+ if(!response.ok){let message=`Library export failed (${response.status})`;try{message=(await response.json()).error||message;}catch{}throw new Error(message);}
+ const objectUrl=URL.createObjectURL(await response.blob());
+ const link=document.createElement('a');
+ link.href=objectUrl;
+ link.download=`paperwatch-${selectedUsername}-${new Date().toISOString().replace(/[:.]/g,'-')}.csv`;
+ document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(objectUrl),120000);
+}
 function toast(message, error=false){const el=$('#toast');el.textContent=message;el.className=error?'error':'';el.style.display='block';clearTimeout(window.toastTimeout);window.toastTimeout=setTimeout(()=>el.style.display='none',4600);}
 async function load(render=true){
   try {
@@ -92,9 +106,11 @@ function pill(label,type=''){return `<span class="pill ${type}"><span class="dot
 function draw(){
  if(!state&&page!=='users'&&page!=='settings')return;
  const openPeriods=page==='sources'?new Set([...main.querySelectorAll('.coverage-panel[open]')].map(el=>el.dataset.sourceId)):null;
+ const openLibrary=page==='library'?new Set([...main.querySelectorAll('.library-accordion[open]')].map(el=>el.dataset.section)):null;
  if(page==='discover')searchRenderKey='';
  main.innerHTML=({overview:overview,sources:sources,topics:topics,discover:discover,library:library,settings:settings,users:users}[page])();
  if(openPeriods)main.querySelectorAll('.coverage-panel').forEach(el=>{if(openPeriods.has(el.dataset.sourceId))el.open=true;});
+ if(openLibrary)main.querySelectorAll('.library-accordion').forEach(el=>{if(openLibrary.has(el.dataset.section))el.open=true;});
  renderTasks();
 }
 function llmNotice(){const missing=Object.entries(state?.llm_status||{}).filter(([,value])=>!value.usable&&!value.optional);return missing.length?`<div class="banner"><div><strong>No usable LLM for ${missing.map(([role])=>e(role)).join(', ')}</strong><p>${missing.map(([role,value])=>`${e(role)}: ${e(value.reason)}`).join(' · ')}. Search and source collection still work.</p></div></div>`:'';}
@@ -142,13 +158,39 @@ function sourceCard(s){
  const historyReady=sourceReady(s)&&(s.adapter!=='feed'||config.issn||config.openalex_source_id);
  return `<div class="source-card"><div class="card-top"><div><div class="card-title">${e(s.name)}</div><div class="card-meta"><a href="${url(s.url)}" target="_blank" rel="noopener">${e(s.url)}</a> · ${e(s.adapter||'No adapter')}</div></div>${status}</div><p class="card-description">${s.adapter==='arxiv'?`Query: ${e(config.query||'Not set')}`:s.adapter==='feed'?`Feed: ${e(config.feed_url||s.url)}`:s.adapter==='crossref'?`Crossref ISSN: ${e(config.issn||'Not set')}`:sourceReady(s)?'Site-specific scraper':'This source will not run until you attach a scraper.'}</p>${s.last_error?`<div class="error-note">${e(s.last_error)}</div>`:''}<div class="card-foot"><div class="card-meta">Every ${days(s.interval_hours)} · Last: ${fmt(s.last_checked)} · Next: ${s.next_check?fmt(s.next_check*1000):'On startup'}</div><div class="row-actions"><button class="button secondary small" data-action="edit-source" data-id="${s.id}">Edit</button><button class="button secondary small" data-action="toggle-source" data-id="${s.id}">${s.enabled?'Pause':'Resume'}</button><button class="button small" data-action="run-source" data-id="${s.id}" ${sourceReady(s)?'':'disabled'}>Run now</button><button class="button secondary small" data-action="history-source" data-id="${s.id}" ${historyReady?'':'disabled'}>${s.adapter==='feed'&&!historyReady?'Add venue ID for history':'Search past dates'}</button><button class="button danger small" data-action="delete-source" data-id="${s.id}">Delete</button></div></div></div>`;
 }
-function coverageDetails(source){
- const history=state.historical_coverage?.[source.id];
- if(!history?.runs?.length)return '';
- const labels={complete:'Fully processed',processing_incomplete:'Processing incomplete',collection_error:'Collection failed',unverified:'Older run: processing unverified',source_changed:'Source settings changed; rerun',running:'Running'};
- const verified=history.complete_intervals||[];
- return `<details class="panel coverage-panel" data-source-id="${source.id}"><summary>Past periods for ${e(source.name)} · ${verified.length} verified interval${verified.length===1?'':'s'}</summary><p class="hint">A period is verified only when collection finished and every encountered paper has a completed screening outcome. A rerun can verify an older period without screening duplicates again.</p>${verified.length?`<div class="coverage-intervals">${verified.map(span=>`<span class="pill">${e(span.start_date)} → ${e(span.end_date)} fully processed</span>`).join('')}</div>`:'<p class="hint">No fully processed period has been verified yet.</p>'}<div class="list">${history.runs.map(run=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(run.start_date)} → ${e(run.end_date)} · ${e(labels[run.status]||run.status)}</div><div class="row-sub">${run.found} checked · ${run.added} new · ${run.linked} linked · ${run.outstanding} need processing${run.finished_at?` · Finished ${fmt(run.finished_at)}`:''}</div>${run.error?`<div class="error-note">${e(run.error)}</div>`:''}</div></div>`).join('')}</div></details>`;
+function coverageCalendar(source,history){
+ const verified=history.complete_intervals||[],runs=history.runs||[];
+ const config=source.adapter_config||{};
+ const canSearch=sourceReady(source)&&(source.adapter!=='feed'||config.issn||config.openalex_source_id);
+ const latest=[...verified.map(span=>span.end_date),...runs.map(run=>run.end_date)].filter(Boolean).sort().at(-1)||new Date().toISOString().slice(0,10);
+ const month=coverageMonths.get(source.id)||latest.slice(0,7);
+ const [year,number]=month.split('-').map(Number);
+ coverageMonths.set(source.id,month);
+ const firstDay=(new Date(Date.UTC(year,number-1,1)).getUTCDay()+6)%7;
+ const count=new Date(Date.UTC(year,number,0)).getUTCDate();
+ const today=new Date().toISOString().slice(0,10);
+ const cells=Array.from({length:Math.ceil((firstDay+count)/7)*7},(_,index)=>{
+  const day=index-firstDay+1;
+  if(day<1||day>count)return '<span class="calendar-empty" aria-hidden="true"></span>';
+  const iso=`${month}-${String(day).padStart(2,'0')}`;
+  const complete=verified.some(span=>span.start_date<=iso&&iso<=span.end_date);
+  const attempted=!complete&&runs.some(run=>run.start_date<=iso&&iso<=run.end_date);
+  const status=complete?'Verified':attempted?'Attempted; not verified':'Not verified';
+  const className=complete?'verified':attempted?'attempted':'unverified';
+  return complete||iso>today||!canSearch?`<span class="calendar-day ${className}" title="${status}: ${iso}" aria-label="${iso}: ${status}">${day}</span>`:`<button type="button" class="calendar-day ${className}" data-action="history-day" data-id="${source.id}" data-day="${iso}" title="${status}: ${iso}. Select to search this day">${day}</button>`;
+ });
+ const title=new Date(Date.UTC(year,number-1,1)).toLocaleString(undefined,{month:'long',year:'numeric',timeZone:'UTC'});
+ return `<div class="coverage-calendar"><div class="calendar-toolbar"><button class="button secondary small" data-action="coverage-month" data-id="${source.id}" data-step="-1" aria-label="Previous month">←</button><strong>${e(title)}</strong><button class="button secondary small" data-action="coverage-month" data-id="${source.id}" data-step="1" aria-label="Next month">→</button></div><div class="calendar-grid">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(day=>`<span class="calendar-weekday">${day}</span>`).join('')}${cells.join('')}</div><div class="calendar-legend"><span><i class="verified"></i> Verified</span><span><i class="attempted"></i> Attempted, incomplete</span><span><i class="unverified"></i> Not verified</span></div><p class="hint">Unverified dates may still contain papers. ${canSearch?'Select one to prepare a one-day search.':'Historical search requires a ready adapter or venue ID.'}</p></div>`;
 }
+function coverageDetails(source){
+ const history=state.historical_coverage?.[source.id]||{runs:[],complete_intervals:[]};
+ const labels={complete:'Fully processed',processing_incomplete:'Processing incomplete',collection_error:'Collection failed',unverified:'Older run: processing unverified',source_changed:'Source settings changed; rerun',running:'Running'};
+ const verified=history.complete_intervals||[],runs=history.runs||[];
+ const view=coverageViews.get(source.id)||'list';
+ const list=`${verified.length?`<div class="coverage-intervals">${verified.map(span=>`<span class="pill">${e(span.start_date)} → ${e(span.end_date)} fully processed</span>`).join('')}</div>`:'<p class="hint">No fully processed period has been verified yet.</p>'}${runs.length?`<div class="list">${runs.map(run=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(run.start_date)} → ${e(run.end_date)} · ${e(labels[run.status]||run.status)}</div><div class="row-sub">${run.found} checked · ${run.added} new · ${run.linked} linked · ${run.outstanding} need processing${run.finished_at?` · Finished ${fmt(run.finished_at)}`:''}</div>${run.error?`<div class="error-note">${e(run.error)}</div>`:''}</div></div>`).join('')}</div>`:''}`;
+ return `<details class="panel coverage-panel" data-source-id="${source.id}" id="coverage-${source.id}"><summary>Past periods for ${e(source.name)} · ${verified.length} verified interval${verified.length===1?'':'s'}</summary><p class="hint">A period is verified only when collection finished and every encountered paper has a completed screening outcome. A rerun can verify an older period without screening duplicates again.</p><div class="coverage-view-switch"><button class="button ${view==='list'?'':'secondary'} small" data-action="coverage-view" data-id="${source.id}" data-view="list" aria-pressed="${view==='list'}">List</button><button class="button ${view==='calendar'?'':'secondary'} small" data-action="coverage-view" data-id="${source.id}" data-view="calendar" aria-pressed="${view==='calendar'}">Calendar</button></div>${view==='calendar'?coverageCalendar(source,history):list}</details>`;
+}
+function renderCoverageDetails(id){const panel=$(`#coverage-${id}`),source=state.sources.find(item=>item.id===id);if(!panel||!source)return;const open=panel.open;panel.outerHTML=coverageDetails(source);$(`#coverage-${id}`).open=open;}
 function sources(){
  return head('Mode 01','Monitored sources','Check chosen repositories on your schedule. Each site needs an adapter that knows how to read its papers.',adminMode?`<button class="button secondary" data-action="show-scraper">+ Add custom scraper</button>`:'')
  + `<div class="banner"><div><strong>Start with a known source</strong><p>Choose arXiv, IACR ePrint, or a journal feed from the source directory below.</p></div><div class="row-actions"><button class="button secondary small" data-action="preset-arxiv">arXiv</button><button class="button secondary small" data-action="preset-iacr">IACR ePrint</button></div></div>`
@@ -269,23 +311,24 @@ function mergeSelectionPanel(){
  const selected=[...mergeSelectedPapers.values()];
  return `<div class="panel" id="merge-panel"><div class="panel-head"><h2>Merge duplicate papers</h2><span class="panel-kicker">${selected.length} selected</span></div><p class="intro">Search the library, select two or more versions of the same paper, then choose which record to keep. The scan suggests possible duplicates; you choose what to merge. The combined record retains every DOI, discovery source, and saved PDF.</p>${selected.length?`<div class="coverage-intervals">${selected.map(p=>`<span class="pill">${e(p.title.slice(0,80))} <button class="button tertiary small" data-action="toggle-merge-paper" data-id="${p.id}" aria-label="Remove ${e(p.title)} from merge">×</button></span>`).join('')}</div>`:''}<div class="form-actions"><button class="button" data-action="review-merge" ${selected.length<2?'disabled':''}>Review merge</button>${selected.length?'<button class="button secondary" data-action="clear-merge">Clear selection</button>':''}</div></div>`;
 }
-function renderMergeSelection(){const panel=$('#merge-panel');if(panel)panel.outerHTML=mergeSelectionPanel();}
+function renderMergeSelection(){const panel=$('#merge-panel');if(panel)panel.outerHTML=mergeSelectionPanel();const section=$('#merge-section');if(section&&mergeSelectedPapers.size)section.open=true;}
 function library(){
  const papers=libraryData?.papers||[];
  const prefs=state.preferences||{};
  const groups=state.paper_groups||[];
  const selectedGroup=groups.some(group=>String(group.id)===String(prefs.library_group))?String(prefs.library_group):'';
  const groupStatus=state.llm_status?.group||{};
- return head('Archive','Paper library','Papers discovered by your monitored sources, with matching decisions and saved summaries.',`<div class="row-actions"><button class="button secondary" data-action="refresh-library">Refresh papers</button><button class="button secondary" data-action="retry-pending" ${state.paper_stats?.retryable===0?'disabled title="No papers are eligible for retry"':''}>↻ &nbsp;Retry errors and pending${state.paper_stats?.retryable!=null?` (${state.paper_stats.retryable})`:''}</button></div>`)
+ return head('Archive','Paper library','Papers discovered by your monitored sources, with matching decisions and saved summaries.',`<div class="row-actions"><button class="button secondary" data-action="export-library">Download all papers (CSV)</button><button class="button secondary" data-action="refresh-library">Refresh papers</button><button class="button secondary" data-action="retry-pending" ${state.paper_stats?.retryable===0?'disabled title="No papers are eligible for retry"':''}>↻ &nbsp;Retry errors and pending${state.paper_stats?.retryable!=null?` (${state.paper_stats.retryable})`:''}</button></div>`)
  + llmNotice()
- + duplicatePanel()
- + mergeSelectionPanel()
- + `<div class="panel"><div class="panel-head"><h2>Similarity groups</h2><span class="panel-kicker">Built on request</span></div><p class="intro">The grouping model organizes papers by topic and method. Rebuilding replaces your previous groups after the task succeeds. New papers are not grouped until you rebuild.</p><form id="groupForm"><div class="form-grid"><div class="field"><label>Papers to group</label><select name="scope"><option value="relevant">Relevant papers (${state.paper_stats?.relevant||0})</option><option value="all">All papers (${state.paper_stats?.total||0})</option></select></div><div class="field"><label>Grouping model</label><div class="hint">${e(groupStatus.usable?`${groupStatus.provider} / ${groupStatus.model}`:groupStatus.reason||'Ask the administrator to set a grouping model.')}</div></div></div><p class="hint">Grouping all papers makes many model requests; watch the task progress and your provider balance.</p><div class="form-actions"><button class="button" type="submit" ${groupStatus.usable?'':'disabled'}>Group papers</button></div></form>${groups.length?`<div class="list" style="margin-top:18px">${groups.map(group=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(group.name)} · ${group.paper_count} papers</div><div class="row-sub">${e(group.description)} · ${e(group.scope)} · ${e(group.model)} · ${fmt(group.created_at)}</div></div><button class="button secondary small" data-action="select-group" data-id="${group.id}">Show papers</button></div>`).join('')}</div>`:'<p class="hint">No similarity groups yet.</p>'}</div>`
- + `<div class="panel"><div class="panel-head"><h2>Filter papers</h2><span id="library-count" class="panel-kicker">${libraryData?`${papers.length} of ${libraryData.total} shown`:'Loading…'}</span></div>
+ + `<details class="library-accordion" data-section="duplicates"><summary>Find possible duplicates</summary>${duplicatePanel()}</details>`
+ + `<details class="library-accordion" data-section="merge" id="merge-section"><summary>Merge duplicate papers</summary>${mergeSelectionPanel()}</details>`
+ + `<details class="library-accordion" data-section="groups"><summary>Similarity groups</summary>`
+ + `<div class="panel"><div class="panel-head"><h2>Similarity groups</h2><span class="panel-kicker">Built on request</span></div><p class="intro">The grouping model organizes papers by topic and method. Rebuilding replaces your previous groups after the task succeeds. New papers are not grouped until you rebuild.</p><form id="groupForm"><div class="form-grid"><div class="field"><label>Papers to group</label><select name="scope"><option value="relevant">Relevant papers (${state.paper_stats?.relevant||0})</option><option value="all">All papers (${state.paper_stats?.total||0})</option></select></div><div class="field"><label>Grouping model</label><div class="hint">${e(groupStatus.usable?`${groupStatus.provider} / ${groupStatus.model}`:groupStatus.reason||'Ask the administrator to set a grouping model.')}</div></div></div><p class="hint">Grouping all papers makes many model requests; watch the task progress and your provider balance.</p><div class="form-actions"><button class="button" type="submit" ${groupStatus.usable?'':'disabled'}>Group papers</button></div></form>${groups.length?`<div class="list" style="margin-top:18px">${groups.map(group=>`<div class="list-row"><div class="row-main"><div class="row-title">${e(group.name)} · ${group.paper_count} papers</div><div class="row-sub">${e(group.description)} · ${e(group.scope)} · ${e(group.model)} · ${fmt(group.created_at)}</div></div><button class="button secondary small" data-action="select-group" data-id="${group.id}">Show papers</button></div>`).join('')}</div>`:'<p class="hint">No similarity groups yet.</p>'}</div></details>`
+ + `<details class="library-accordion" data-section="filters"><summary>Filter papers</summary><div class="panel"><div class="panel-head"><h2>Filter papers</h2><span id="library-count" class="panel-kicker">${libraryData?`${papers.length} of ${libraryData.total} shown`:'Loading…'}</span></div>
  <div class="field"><label for="library-search">Find by title, abstract, DOI, or source</label><div class="row-actions"><input id="library-search" type="search" value="${e(prefs.library_query||'')}" placeholder="Search your paper library"><button class="button secondary" data-action="search-library">Search</button></div></div>
  <div class="form-grid"><div class="field"><label>Matching decision</label><select id="library-filter"><option value="all" ${prefs.library_filter==='all'?'selected':''}>All papers</option><option value="relevant" ${prefs.library_filter==='relevant'?'selected':''}>Relevant only</option><option value="pending" ${prefs.library_filter==='pending'?'selected':''}>Needs review</option></select></div><div class="field"><label>Similarity group</label><select id="library-group"><option value="">All groups</option>${groups.map(group=>`<option value="${group.id}" ${selectedGroup===String(group.id)?'selected':''}>${e(group.name)} (${group.paper_count})</option>`).join('')}</select></div></div>
  <h3 class="library-filter-heading">Publication date</h3><div class="form-grid"><div class="field"><label>Quick publication interval</label><select id="library-published-period"><option value="all">Any date</option><option value="today">Today</option><option value="week">Last 7 days</option><option value="month">This month</option><option value="custom" ${prefs.library_published_from||prefs.library_published_to?'selected':''}>Custom interval</option></select></div><div class="field"><label>Published from</label><input id="library-published-from" type="date" value="${e(prefs.library_published_from||'')}"></div><div class="field"><label>Published through</label><input id="library-published-to" type="date" value="${e(prefs.library_published_to||'')}"></div></div><p class="hint">Both dates are included. Set the same date twice for one day. Papers without a complete publication date are excluded when this filter is active.</p>
- <h3 class="library-filter-heading">Date found by Paperwatch</h3><div class="form-grid"><div class="field"><label>Quick found interval</label><select id="library-period"><option value="all">Any date</option><option value="today">Today</option><option value="week">Last 7 days</option><option value="month">This month</option><option value="custom" ${prefs.library_from||prefs.library_to?'selected':''}>Custom interval</option></select></div><div class="field"><label>Found from (UTC)</label><input id="library-from" type="date" value="${e(prefs.library_from||'')}"></div><div class="field"><label>Found through (UTC)</label><input id="library-to" type="date" value="${e(prefs.library_to||'')}"></div></div></div><div id="paper-list">${libraryData?paperCards(papers):'<p class="muted">Loading papers…</p>'}</div><div class="form-actions" id="library-more" ${!libraryData||papers.length>=libraryData.total?'hidden':''}><button class="button secondary" data-action="more-library">Load more papers</button></div>` + taskPanel();
+ <h3 class="library-filter-heading">Date found by Paperwatch</h3><div class="form-grid"><div class="field"><label>Quick found interval</label><select id="library-period"><option value="all">Any date</option><option value="today">Today</option><option value="week">Last 7 days</option><option value="month">This month</option><option value="custom" ${prefs.library_from||prefs.library_to?'selected':''}>Custom interval</option></select></div><div class="field"><label>Found from (UTC)</label><input id="library-from" type="date" value="${e(prefs.library_from||'')}"></div><div class="field"><label>Found through (UTC)</label><input id="library-to" type="date" value="${e(prefs.library_to||'')}"></div></div></div></details><div class="paper-list-toolbar"><span id="library-summary-count" class="panel-kicker">${libraryData?`${papers.length} of ${libraryData.total} shown`:'Loading…'}</span><div class="field"><label for="library-sort">Sort papers</label><select id="library-sort"><option value="found_desc" ${!prefs.library_sort||prefs.library_sort==='found_desc'?'selected':''}>Newest found</option><option value="found_asc" ${prefs.library_sort==='found_asc'?'selected':''}>Oldest found</option><option value="published_desc" ${prefs.library_sort==='published_desc'?'selected':''}>Newest published</option><option value="published_asc" ${prefs.library_sort==='published_asc'?'selected':''}>Oldest published</option><option value="score_desc" ${prefs.library_sort==='score_desc'?'selected':''}>Highest match %</option><option value="score_asc" ${prefs.library_sort==='score_asc'?'selected':''}>Lowest match %</option><option value="title_asc" ${prefs.library_sort==='title_asc'?'selected':''}>Title A–Z</option><option value="title_desc" ${prefs.library_sort==='title_desc'?'selected':''}>Title Z–A</option></select></div></div><div id="paper-list">${libraryData?paperCards(papers):'<p class="muted">Loading papers…</p>'}</div><div class="form-actions" id="library-more" ${!libraryData||papers.length>=libraryData.total?'hidden':''}><button class="button secondary" data-action="more-library">Load more papers</button></div>` + taskPanel();
 }
 function paperCards(papers){
  return papers.length?papers.map(p=>{
@@ -296,24 +339,26 @@ function paperCards(papers){
 
 async function refreshLibrary(reset=true){
  if(page!=='library')return;
- const from=$('#library-from')?.value||'',to=$('#library-to')?.value||'',publishedFrom=$('#library-published-from')?.value||'',publishedTo=$('#library-published-to')?.value||'',status=$('#library-filter')?.value||'all',group=$('#library-group')?.value||'',query=$('#library-search')?.value.trim()||'';
+ const from=$('#library-from')?.value||'',to=$('#library-to')?.value||'',publishedFrom=$('#library-published-from')?.value||'',publishedTo=$('#library-published-to')?.value||'',status=$('#library-filter')?.value||'all',group=$('#library-group')?.value||'',query=$('#library-search')?.value.trim()||'',sort=$('#library-sort')?.value||'found_desc';
  if(from&&to&&from>to){toast('Found-from date must be before found-through date.',true);return;}
  if(publishedFrom&&publishedTo&&publishedFrom>publishedTo){toast('Published-from date must be before published-through date.',true);return;}
  const offset=reset?0:libraryOffset;
+ const requestId=++libraryRequestId;
  try{
-  const params=new URLSearchParams({status,offset:String(offset),limit:'50'});
+  const params=new URLSearchParams({status,sort,offset:String(offset),limit:'50'});
   if(from)params.set('start_date',from);if(to)params.set('end_date',to);
   if(publishedFrom)params.set('published_start_date',publishedFrom);if(publishedTo)params.set('published_end_date',publishedTo);
   if(group)params.set('group_id',group);
   if(query)params.set('q',query);
   const result=await api('/api/papers?'+params);
-  if(page!=='library')return;
+  if(page!=='library'||requestId!==libraryRequestId)return;
   libraryData=reset?result:{...result,papers:[...(libraryData?.papers||[]),...result.papers]};
   libraryOffset=libraryData.papers.length;
   $('#paper-list').innerHTML=paperCards(libraryData.papers);
   $('#library-count').textContent=`${libraryData.papers.length} of ${libraryData.total} shown`;
+  $('#library-summary-count').textContent=`${libraryData.papers.length} of ${libraryData.total} shown`;
   $('#library-more').hidden=libraryData.papers.length>=libraryData.total;
-  savePreferences({library_filter:status,library_from:from,library_to:to,library_published_from:publishedFrom,library_published_to:publishedTo,library_group:group,library_query:query});
+  savePreferences({library_filter:status,library_from:from,library_to:to,library_published_from:publishedFrom,library_published_to:publishedTo,library_group:group,library_query:query,library_sort:sort});
  }catch(err){toast(err.message,true);}
 }
 
@@ -341,10 +386,10 @@ function showInvite(result){
  document.body.append(div);
 }
 
-function showHistorySource(id){
+function showHistorySource(id,day=''){
  const source=state.sources.find(item=>item.id===id);if(!source)return;
  const div=document.createElement('div');div.className='detail-overlay';div.id='detail-overlay';
- div.innerHTML=`<div class="detail" role="dialog" aria-modal="true" aria-label="Search past papers"><button class="icon-button detail-close" data-action="close-detail">×</button><div class="eyebrow">HISTORICAL COLLECTION</div><h2>${e(source.name)}</h2><p>Collect papers first published in this inclusive interval. New papers enter your library and the first-pass LLM pipeline. arXiv uses its own API; feeds need an ISSN or OpenAlex source ID for an indexed fallback.</p><form id="historyForm" data-id="${id}"><div class="form-grid"><div class="field"><label>From</label><input type="date" name="start_date" required></div><div class="field"><label>Through</label><input type="date" name="end_date" required></div></div><div class="form-actions"><button class="button" type="submit">Collect papers</button></div></form></div>`;
+ div.innerHTML=`<div class="detail" role="dialog" aria-modal="true" aria-label="Search past papers"><button class="icon-button detail-close" data-action="close-detail">×</button><div class="eyebrow">HISTORICAL COLLECTION</div><h2>${e(source.name)}</h2><p>Collect papers first published in this inclusive interval. New papers enter your library and the first-pass LLM pipeline. arXiv uses its own API; feeds need an ISSN or OpenAlex source ID for an indexed fallback.</p><form id="historyForm" data-id="${id}"><div class="form-grid"><div class="field"><label>From</label><input type="date" name="start_date" value="${e(day)}" required></div><div class="field"><label>Through</label><input type="date" name="end_date" value="${e(day)}" required></div></div><div class="form-actions"><button class="button" type="submit">Collect papers</button></div></form></div>`;
  document.body.append(div);
 }
 
@@ -441,10 +486,18 @@ document.addEventListener('click', async ev=>{
   if(action==='cancel-source'){window.editingSource=null;dirtyForm=false;draw();return;}
   if(action==='run-source'){await api(`/api/sources/${id}/run`,{method:'POST'});toast('Source run queued.');await load();return;}
   if(action==='history-source'){showHistorySource(id);return;}
+  if(action==='coverage-view'){coverageViews.set(id,btn.dataset.view);renderCoverageDetails(id);return;}
+  if(action==='coverage-month'){
+   const current=coverageMonths.get(id)||new Date().toISOString().slice(0,7);
+   const month=new Date(`${current}-01T00:00:00Z`);month.setUTCMonth(month.getUTCMonth()+Number(btn.dataset.step));
+   coverageMonths.set(id,month.toISOString().slice(0,7));renderCoverageDetails(id);return;
+  }
+  if(action==='history-day'){showHistorySource(id,btn.dataset.day);return;}
   if(action==='cancel-job'){await api(`/api/jobs/${id}/cancel`,{method:'POST'});toast('Cancellation requested. The current network call may finish first.');await load(false);return;}
   if(action==='freeze-search'){searchFrozen=!searchFrozen;btn.textContent=searchFrozen?'Resume display':'Freeze display';if(!searchFrozen&&currentSearchId)showSearch(currentSearchId);return;}
   if(action==='more-search'){const result=await api(`/api/searches/${id}/more`,{method:'POST'});toast(result.queued?'Loading another page.':'Page already loading.');await load(false);return;}
   if(action==='more-library'){await refreshLibrary(false);return;}
+  if(action==='export-library'){await downloadLibrary();toast('Library CSV downloaded.');return;}
   if(action==='refresh-library'){await load(false);await refreshLibrary(true);return;}
   if(action==='search-library'){await refreshLibrary(true);return;}
   if(action==='scan-duplicates'){
@@ -585,7 +638,7 @@ document.addEventListener('change',ev=>{
    $(`#${prefix}-from`).value=from;$(`#${prefix}-to`).value=to;refreshLibrary(true);
   }
  }
- if(['library-filter','library-group','library-from','library-to','library-published-from','library-published-to'].includes(ev.target.id)){
+ if(['library-filter','library-group','library-sort','library-from','library-to','library-published-from','library-published-to'].includes(ev.target.id)){
   if(['library-from','library-to'].includes(ev.target.id))$('#library-period').value='custom';
   if(['library-published-from','library-published-to'].includes(ev.target.id))$('#library-published-period').value='custom';
   refreshLibrary(true);
